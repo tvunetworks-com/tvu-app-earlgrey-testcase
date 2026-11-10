@@ -1,0 +1,8 @@
+# 由 Scripts/sync_upstream.sh 写入，记录 Vendor/ 对应的上游版本
+earlgrey_repo=https://github.com/google/EarlGrey.git
+earlgrey_branch=earlgrey2
+earlgrey_commit=1070b6e6c89e8a6d9566c28228b92dba416c6498
+edistantobject_repo=https://github.com/google/eDistantObject.git
+edistantobject_branch=master
+edistantobject_commit=2bbd17fe3acacc199efd2c758b1b8044acd9ee05
+synced_at=2026-11-10

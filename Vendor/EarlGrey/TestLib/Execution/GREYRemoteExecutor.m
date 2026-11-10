@@ -1,0 +1,62 @@
+//
+// Copyright 2019 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+#import "GREYRemoteExecutor.h"
+
+#import "GREYFatalAsserts.h"
+#import "EDOHostService.h"
+
+void GREYExecuteAsyncBlockInBackgroundQueue(void (^block)(void), void (^completionHandler)(void)) {
+  // The dispatch queue where the queries will be tunnelled to. Will be initialized only once.
+  static dispatch_queue_t appProxyQueue;
+  static dispatch_once_t token = 0;
+  dispatch_once(&token, ^{
+    // Since the "user" in the test is often initiating requests and waiting on the blocks on the
+    // main thread, the USER_INITIATED QoS class is used.
+    dispatch_queue_attr_t queueAttributes =
+        dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
+    appProxyQueue = dispatch_queue_create("com.google.earlgrey.egappproxyqueue", queueAttributes);
+    [EDOHostService serviceWithPort:0 rootObject:nil queue:appProxyQueue];
+  });
+
+  dispatch_async(appProxyQueue, ^{
+    block();
+    dispatch_async(dispatch_get_main_queue(), completionHandler);
+  });
+}
+
+void GREYExecuteSyncBlockInBackgroundQueue(void (^block)(void)) {
+  GREYFatalAssertMainThread();
+  // This dispatches the EarlGrey call onto another thread so that the test's main thread
+  // is freed up for handling any more events. Without this, deadlocks will be seen.
+  // The timeout for the interaction is set to be forever since EarlGrey's interaction
+  // should handle the interaction timeout.
+  __block BOOL blockProcessed = NO;
+  dispatch_block_t blockToStopMainRunloopSpinning =
+      dispatch_block_create(DISPATCH_BLOCK_ASSIGN_CURRENT, ^{
+        blockProcessed = YES;
+        CFRunLoopStop(CFRunLoopGetCurrent());
+      });
+
+  GREYExecuteAsyncBlockInBackgroundQueue(block, blockToStopMainRunloopSpinning);
+
+  while (!blockProcessed) {
+    CFRunLoopRun();
+  }
+
+  // Cancel any future executions of the CFRunLoopStop block.
+  dispatch_block_cancel(blockToStopMainRunloopSpinning);
+}

@@ -1,0 +1,119 @@
+//
+// Copyright 2020 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,ssss
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+#import "GREYLogger.h"
+
+#import <Foundation/Foundation.h>
+
+NSString* const kGREYAllowVerboseLogging = @"eg_verbose_logs";
+
+NSString* const kGREYVerboseLoggingPrefix = @"[EARLGREY-LOG] ";
+
+NSString* const kGREYVerboseLoggingKeyAll = @"all";
+NSString* const kGREYVerboseLoggingKeyInteraction = @"interaction";
+NSString* const kGREYVerboseLoggingKeyAppState = @"app_state";
+NSString* const kGREYVerboseLoggingKeySendTouchEvent = @"send_touch_event";
+
+@interface GREYVerboseLoggingWatcher : NSObject
+@property(nonatomic, readonly) NSInteger verboseLoggingValue;
+@end
+
+@implementation GREYVerboseLoggingWatcher {
+  NSUserDefaults* _userDefaults;
+}
+- (instancetype)init {
+  self = [super init];
+  if (self) {
+    _userDefaults = [NSUserDefaults standardUserDefaults];
+    [_userDefaults addObserver:self forKeyPath:kGREYAllowVerboseLogging options:0 context:nil];
+    _verboseLoggingValue = [_userDefaults integerForKey:kGREYAllowVerboseLogging];
+  }
+  return self;
+}
+
+- (void)dealloc {
+  [_userDefaults removeObserver:self forKeyPath:kGREYAllowVerboseLogging];
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary<NSKeyValueChangeKey, id>*)change
+                       context:(void*)context {
+  if ([keyPath isEqualToString:kGREYAllowVerboseLogging]) {
+    _verboseLoggingValue = [_userDefaults integerForKey:kGREYAllowVerboseLogging];
+  }
+}
+@end
+
+static NSInteger GREYVerboseLoggingValue(void) {
+  static dispatch_once_t once_token;
+  static GREYVerboseLoggingWatcher* watcher;
+  dispatch_once(&once_token, ^{
+    watcher = [[GREYVerboseLoggingWatcher alloc] init];
+  });
+  return watcher.verboseLoggingValue;
+}
+
+BOOL GREYVerboseLoggingEnabled(void) { return GREYVerboseLoggingValue() > 0; }
+
+BOOL GREYVerboseLoggingEnabledForLevel(GREYVerboseLogType level) {
+  return (GREYVerboseLoggingValue() & level) > 0;
+}
+
+GREYVerboseLogType GREYVerboseLogTypeFromString(NSString* verboseLoggingString) {
+  static NSDictionary<NSString*, NSNumber*>* verboseType = nil;
+  static dispatch_once_t once_token;
+  dispatch_once(&once_token, ^{
+    verboseType = @{
+      kGREYVerboseLoggingKeyInteraction : @(kGREYVerboseLogTypeInteraction),
+      kGREYVerboseLoggingKeyAppState : @(kGREYVerboseLogTypeAppState),
+      kGREYVerboseLoggingKeySendTouchEvent : @(kGREYVerboseLogTypeSendTouchEvent),
+      kGREYVerboseLoggingKeyAll : @(kGREYVerboseLogTypeAll),
+    };
+  });
+  NSNumber* verboseLogTypeNumber = verboseType[verboseLoggingString];
+  if (!verboseLogTypeNumber) {
+    NSLog(@"Ignoring unknown verbose log type: %@", verboseLoggingString);
+    return kGREYVerboseLogTypeNone;
+  }
+  return verboseLogTypeNumber.intValue;
+}
+
+/** An internal function to log a specified statement.
+ *
+ * @param format An NSString specifying the format to print.
+ * @param args   A va_list of args to be added to the specified @c format.
+ **/
+static void GREYLogInternal(NSString* format, va_list args) {
+  NSString* formatWithPrefix = [kGREYVerboseLoggingPrefix stringByAppendingString:format];
+  NSLogv(formatWithPrefix, args);
+}
+
+void GREYLogVerbose(NSString* format, ...) {
+  if (GREYVerboseLoggingEnabled()) {
+    va_list args;
+    va_start(args, format);
+    GREYLogInternal(format, args);
+    va_end(args);
+  }
+}
+
+void GREYLog(NSString* format, ...) {
+  va_list args;
+  va_start(args, format);
+  GREYLogInternal(format, args);
+  va_end(args);
+}
